@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Policy Dashboard</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f4f7f6;
+            color: #333;
+        }
+        
+        /* Tab Styling */
+        .tab-container {
+            display: flex;
+            border-bottom: 2px solid #ccc;
+            margin-bottom: 20px;
+        }
+        .tab-button {
+            background-color: #e9e9e9;
+            border: none;
+            outline: none;
+            cursor: pointer;
+            padding: 10px 20px;
+            transition: 0.3s;
+            font-size: 16px;
+            border-radius: 5px 5px 0 0;
+            margin-right: 5px;
+        }
+        .tab-button:hover {
+            background-color: #ddd;
+        }
+        .tab-button.active {
+            background-color: #007bff;
+            color: white;
+            font-weight: bold;
+        }
+
+        /* Search Bar Styling */
+        .controls-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .search-input {
+            padding: 8px 12px;
+            width: 300px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        /* Table Styling */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        th, td {
+            text-align: left;
+            padding: 12px;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #f8f9fa;
+            font-weight: bold;
+        }
+        tr:hover {
+            background-color: #f1f1f1;
+        }
+        
+        /* Pagination Styling */
+        .pagination {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            margin-top: 15px;
+            gap: 15px;
+        }
+        .page-btn {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .page-btn:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .page-btn:hover:not(:disabled) {
+            background-color: #0056b3;
+        }
+        .page-info {
+            font-size: 14px;
+            color: #555;
+        }
+
+        /* General Elements */
+        .policy-desc {
+            margin-bottom: 15px;
+            color: #666;
+            font-style: italic;
+        }
+        .unquarantine-btn {
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .unquarantine-btn:hover {
+            background-color: #c82333;
+        }
+        a {
+            color: #007bff;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Policy Dashboard</h1>
+    
+    <div class="tab-container" id="tab-header"></div>
+    
+    <div id="dashboard-container"></div>
+
+    <script>
+        // Global State Variables for Search and Pagination
+        let currentLibs = [];
+        let filteredLibs = [];
+        let currentPolicy = null;
+        let currentPage = 1;
+        const ITEMS_PER_PAGE = 1000;
+
+        async function init() {
+            try {
+                const response = await fetch('policies.json');
+                if (!response.ok) throw new Error("Failed to fetch policies.json");
+                
+                const policies = await response.json();
+                renderTabs(policies);
+                
+                if (policies.length > 0) {
+                    loadPolicyData(policies[0]);
+                }
+            } catch (error) {
+                console.error(error);
+                document.getElementById('dashboard-container').innerHTML = `<p style="color:red;">Error loading policies: ${error.message}</p>`;
+            }
+        }
+
+        function renderTabs(policies) {
+            const header = document.getElementById('tab-header');
+            
+            policies.forEach((policy, index) => {
+                const btn = document.createElement('button');
+                btn.className = 'tab-button';
+                if (index === 0) btn.classList.add('active');
+                btn.innerText = policy.name;
+                
+                btn.onclick = () => {
+                    document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    loadPolicyData(policy);
+                };
+                
+                header.appendChild(btn);
+            });
+        }
+
+        async function loadPolicyData(policy) {
+            const container = document.getElementById('dashboard-container');
+            container.innerHTML = '<p>Loading data...</p>';
+            currentPolicy = policy;
+            
+            try {
+                const response = await fetch(`${policy.name}/libs.json`);
+                if (!response.ok) throw new Error(`libs.json not found for ${policy.name}`);
+                
+                currentLibs = await response.json();
+                
+                // Set up the initial layout structure (Title, Search Bar, Empty Table Div, Empty Pagination Div)
+                container.innerHTML = `
+                    <h2>${policy.name}</h2>
+                    <p class="policy-desc">${policy.description}</p>
+                    
+                    <div class="controls-container">
+                        <input type="text" id="searchInput" class="search-input" placeholder="Search by name, PURL, or CVE..." onkeyup="handleSearch()">
+                        <div class="page-info" id="total-results-info"></div>
+                    </div>
+                    
+                    <div id="table-container"></div>
+                    
+                    <div class="pagination" id="pagination-container">
+                        <button class="page-btn" id="prev-btn" onclick="changePage(-1)">Previous</button>
+                        <span class="page-info" id="page-info"></span>
+                        <button class="page-btn" id="next-btn" onclick="changePage(1)">Next</button>
+                    </div>
+                `;
+                
+                // Run an initial "search" to populate the table with the default state
+                handleSearch();
+                
+            } catch (error) {
+                console.error(error);
+                container.innerHTML = `
+                    <h2>${policy.name}</h2>
+                    <p class="policy-desc">${policy.description}</p>
+                    <p style="color:red;">Error loading data for ${policy.name}. Ensure ${policy.name}/libs.json exists.</p>
+                `;
+            }
+        }
+
+        // Filters the main dataset based on user input
+        function handleSearch() {
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            
+            filteredLibs = currentLibs.filter(lib => {
+                const nameMatch = (lib.name || '').toLowerCase().includes(searchTerm);
+                const purlMatch = (lib.purl || '').toLowerCase().includes(searchTerm);
+                const cveMatch = (lib.cve || '').toLowerCase().includes(searchTerm);
+                const idMatch = (lib.quarantine_id || '').toLowerCase().includes(searchTerm);
+                
+                return nameMatch || purlMatch || cveMatch || idMatch;
+            });
+            
+            // Reset to page 1 whenever a new search is executed
+            currentPage = 1;
+            
+            // Update the total results counter
+            document.getElementById('total-results-info').innerText = `Total matching libraries: ${filteredLibs.length}`;
+            
+            renderTable();
+        }
+
+        // Renders the specific chunk of data for the current page
+        function renderTable() {
+            const tableContainer = document.getElementById('table-container');
+            
+            if (filteredLibs.length === 0) {
+                tableContainer.innerHTML = '<p>No libraries found matching your criteria.</p>';
+                updatePaginationControls();
+                return;
+            }
+
+            // Calculate slicing indexes for pagination
+            const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+            const endIndex = startIndex + ITEMS_PER_PAGE;
+            const paginatedLibs = filteredLibs.slice(startIndex, endIndex);
+
+            let html = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>PURL</th>
+                            <th>Quarantine ID</th>
+                            <th>CVE</th>
+                            <th>Description</th>
+                            ${currentPolicy.allow_unqurantine ? '<th>Action</th>' : ''}
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            paginatedLibs.forEach(lib => {
+                html += `
+                    <tr>
+                        <td>${lib.name || 'N/A'}</td>
+                        <td>${lib.purl || 'N/A'}</td>
+                        <td>${lib.quarantine_id || 'N/A'}</td>
+                        <td><a href="${lib.cve_link || '#'}" target="_blank">${lib.cve || 'N/A'}</a></td>
+                        <td>${lib.cve_short_desc || 'N/A'}</td>
+                        ${currentPolicy.allow_unqurantine ? `<td><button class="unquarantine-btn" onclick="handleUnquarantine('${lib.quarantine_id}')">Unquarantine</button></td>` : ''}
+                    </tr>
+                `;
+            });
+
+            html += `</tbody></table>`;
+            tableContainer.innerHTML = html;
+            
+            updatePaginationControls();
+        }
+
+        // Updates the state of the Prev/Next buttons and the text indicator
+        function updatePaginationControls() {
+            const totalPages = Math.ceil(filteredLibs.length / ITEMS_PER_PAGE) || 1;
+            
+            document.getElementById('page-info').innerText = `Page ${currentPage} of ${totalPages}`;
+            
+            document.getElementById('prev-btn').disabled = (currentPage === 1);
+            document.getElementById('next-btn').disabled = (currentPage === totalPages);
+        }
+
+        // Handles button clicks for Next/Previous
+        function changePage(direction) {
+            currentPage += direction;
+            renderTable();
+        }
+
+        function handleUnquarantine(quarantineId) {
+            alert(`Unquarantine requested for ID: ${quarantineId}`);
+            // Integrate your API call to Nexus IQ or your backend here
+        }
+
+        init();
+    </script>
+</body>
+</html>
