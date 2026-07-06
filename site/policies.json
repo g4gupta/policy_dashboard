@@ -1,0 +1,12 @@
+[
+  {
+    "name": "policy_a",
+    "description": "description of the policy",
+    "allow_unqurantine": false
+  },
+  {
+    "name": "policy_b",
+    "description": "description of another policy",
+    "allow_unqurantine": true
+  }
+]
