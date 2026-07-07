@@ -47,7 +47,7 @@
         }
         .search-input {
             padding: 8px 12px;
-            width: 300px;
+            width: 350px;
             border: 1px solid #ccc;
             border-radius: 4px;
             font-size: 14px;
@@ -59,11 +59,13 @@
             border-collapse: collapse;
             background: white;
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            font-size: 14px;
         }
         th, td {
             text-align: left;
-            padding: 12px;
+            padding: 10px;
             border-bottom: 1px solid #ddd;
+            vertical-align: top;
         }
         th {
             background-color: #f8f9fa;
@@ -71,6 +73,34 @@
         }
         tr:hover {
             background-color: #f1f1f1;
+        }
+        
+        /* Specific Column Adjustments */
+        .hash-col {
+            font-family: monospace;
+            font-size: 12px;
+            color: #666;
+            word-break: break-all;
+            max-width: 120px;
+        }
+        .cve-container {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .cve-item {
+            padding-bottom: 8px;
+            border-bottom: 1px dashed #eee;
+        }
+        .cve-item:last-child {
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+        .cve-desc {
+            font-size: 12px;
+            color: #555;
+            display: block;
+            margin-top: 2px;
         }
         
         /* Pagination Styling */
@@ -114,6 +144,7 @@
             padding: 6px 12px;
             border-radius: 4px;
             cursor: pointer;
+            white-space: nowrap;
         }
         .unquarantine-btn:hover {
             background-color: #c82333;
@@ -132,11 +163,9 @@
     <h1>Policy Dashboard</h1>
     
     <div class="tab-container" id="tab-header"></div>
-    
     <div id="dashboard-container"></div>
 
     <script>
-        // Global State Variables for Search and Pagination
         let currentLibs = [];
         let filteredLibs = [];
         let currentPolicy = null;
@@ -188,15 +217,22 @@
                 const response = await fetch(`${policy.name}/libs.json`);
                 if (!response.ok) throw new Error(`libs.json not found for ${policy.name}`);
                 
-                currentLibs = await response.json();
+                let fetchedLibs = await response.json();
                 
-                // Set up the initial layout structure (Title, Search Bar, Empty Table Div, Empty Pagination Div)
+                // Enforce 10k limit client-side just in case
+                const MAX_RECORDS = 10000;
+                if (fetchedLibs.length > MAX_RECORDS) {
+                    currentLibs = fetchedLibs.slice(0, MAX_RECORDS);
+                } else {
+                    currentLibs = fetchedLibs;
+                }
+                
                 container.innerHTML = `
                     <h2>${policy.name}</h2>
                     <p class="policy-desc">${policy.description}</p>
                     
                     <div class="controls-container">
-                        <input type="text" id="searchInput" class="search-input" placeholder="Search by name, PURL, or CVE..." onkeyup="handleSearch()">
+                        <input type="text" id="searchInput" class="search-input" placeholder="Search name, repo, hash, or CVE..." onkeyup="handleSearch()">
                         <div class="page-info" id="total-results-info"></div>
                     </div>
                     
@@ -209,7 +245,12 @@
                     </div>
                 `;
                 
-                // Run an initial "search" to populate the table with the default state
+                if (fetchedLibs.length > MAX_RECORDS) {
+                    const info = document.getElementById('total-results-info');
+                    info.innerText = `Warning: Displaying first ${MAX_RECORDS} of ${fetchedLibs.length} total libraries.`;
+                    info.style.color = "red";
+                }
+                
                 handleSearch();
                 
             } catch (error) {
@@ -222,29 +263,33 @@
             }
         }
 
-        // Filters the main dataset based on user input
         function handleSearch() {
             const searchTerm = document.getElementById('searchInput').value.toLowerCase();
             
             filteredLibs = currentLibs.filter(lib => {
                 const nameMatch = (lib.name || '').toLowerCase().includes(searchTerm);
-                const purlMatch = (lib.purl || '').toLowerCase().includes(searchTerm);
-                const cveMatch = (lib.cve || '').toLowerCase().includes(searchTerm);
-                const idMatch = (lib.quarantine_id || '').toLowerCase().includes(searchTerm);
+                const repoMatch = (lib.repo_name || '').toLowerCase().includes(searchTerm);
+                const hashMatch = (lib.hash || '').toLowerCase().includes(searchTerm);
+                const idMatch = (lib.qurantined_id || '').toLowerCase().includes(searchTerm);
                 
-                return nameMatch || purlMatch || cveMatch || idMatch;
+                // Check if any of the nested CVEs match the search term
+                const cveMatch = (lib.cve || []).some(c => 
+                    (c.name || '').toLowerCase().includes(searchTerm) || 
+                    (c.cve_short_desc || '').toLowerCase().includes(searchTerm)
+                );
+                
+                return nameMatch || repoMatch || hashMatch || idMatch || cveMatch;
             });
             
-            // Reset to page 1 whenever a new search is executed
             currentPage = 1;
             
-            // Update the total results counter
-            document.getElementById('total-results-info').innerText = `Total matching libraries: ${filteredLibs.length}`;
+            if (document.getElementById('total-results-info').style.color !== "red") {
+                document.getElementById('total-results-info').innerText = `Total matching libraries: ${filteredLibs.length}`;
+            }
             
             renderTable();
         }
 
-        // Renders the specific chunk of data for the current page
         function renderTable() {
             const tableContainer = document.getElementById('table-container');
             
@@ -254,7 +299,6 @@
                 return;
             }
 
-            // Calculate slicing indexes for pagination
             const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
             const endIndex = startIndex + ITEMS_PER_PAGE;
             const paginatedLibs = filteredLibs.slice(startIndex, endIndex);
@@ -264,10 +308,11 @@
                     <thead>
                         <tr>
                             <th>Name</th>
-                            <th>PURL</th>
-                            <th>Quarantine ID</th>
-                            <th>CVE</th>
-                            <th>Description</th>
+                            <th>Repo</th>
+                            <th>Hash</th>
+                            <th>Quarantine Date</th>
+                            <th>Q-ID</th>
+                            <th>CVE Details</th>
                             ${currentPolicy.allow_unqurantine ? '<th>Action</th>' : ''}
                         </tr>
                     </thead>
@@ -275,14 +320,32 @@
             `;
 
             paginatedLibs.forEach(lib => {
+                // Generate HTML for the nested CVE array
+                let cveHtml = '';
+                if (lib.cve && Array.isArray(lib.cve) && lib.cve.length > 0) {
+                    cveHtml = '<div class="cve-container">';
+                    lib.cve.forEach(c => {
+                        cveHtml += `
+                            <div class="cve-item">
+                                <strong><a href="${c.cve_link || '#'}" target="_blank">${c.name || 'Unknown CVE'}</a></strong>
+                                <span class="cve-desc">${c.cve_short_desc || 'No description provided.'}</span>
+                            </div>
+                        `;
+                    });
+                    cveHtml += '</div>';
+                } else {
+                    cveHtml = '<em>No CVE data</em>';
+                }
+
                 html += `
                     <tr>
                         <td>${lib.name || 'N/A'}</td>
-                        <td>${lib.purl || 'N/A'}</td>
-                        <td>${lib.quarantine_id || 'N/A'}</td>
-                        <td><a href="${lib.cve_link || '#'}" target="_blank">${lib.cve || 'N/A'}</a></td>
-                        <td>${lib.cve_short_desc || 'N/A'}</td>
-                        ${currentPolicy.allow_unqurantine ? `<td><button class="unquarantine-btn" onclick="handleUnquarantine('${lib.quarantine_id}')">Unquarantine</button></td>` : ''}
+                        <td>${lib.repo_name || 'N/A'}</td>
+                        <td class="hash-col">${lib.hash || 'N/A'}</td>
+                        <td>${lib.quarantine_date || 'N/A'}</td>
+                        <td>${lib.qurantined_id || 'N/A'}</td>
+                        <td>${cveHtml}</td>
+                        ${currentPolicy.allow_unqurantine ? `<td><button class="unquarantine-btn" onclick="handleUnquarantine('${lib.qurantined_id}')">Unquarantine</button></td>` : ''}
                     </tr>
                 `;
             });
@@ -293,17 +356,13 @@
             updatePaginationControls();
         }
 
-        // Updates the state of the Prev/Next buttons and the text indicator
         function updatePaginationControls() {
             const totalPages = Math.ceil(filteredLibs.length / ITEMS_PER_PAGE) || 1;
-            
             document.getElementById('page-info').innerText = `Page ${currentPage} of ${totalPages}`;
-            
             document.getElementById('prev-btn').disabled = (currentPage === 1);
             document.getElementById('next-btn').disabled = (currentPage === totalPages);
         }
 
-        // Handles button clicks for Next/Previous
         function changePage(direction) {
             currentPage += direction;
             renderTable();
@@ -311,7 +370,6 @@
 
         function handleUnquarantine(quarantineId) {
             alert(`Unquarantine requested for ID: ${quarantineId}`);
-            // Integrate your API call to Nexus IQ or your backend here
         }
 
         init();
