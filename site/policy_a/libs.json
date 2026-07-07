@@ -1,0 +1,22 @@
+[
+    {
+        "name": "quarntined-lib:1",
+        "purl": "",
+        "qurantined_id": "986453457",
+        "hash": "ldhflsdhflsdkjdf",
+        "repo_name": "proxy-oss",
+        "quarantine_date": "2026-03-05",
+        "cve": [
+            {
+                "name": "CVE-2026-5655",
+                "cve_link": "https://link/to/cve/page_a1",
+                "cve_short_desc": "Some comments on why it was quarantined in Policy A."
+            },
+            {
+                "name": "CVE-2026-5655",
+                "cve_link": "https://link/to/cve/page_a1",
+                "cve_short_desc": "Some comments on why it was quarantined in Policy A."
+            }
+        ]
+    }
+]
